@@ -2,7 +2,7 @@
 
 A PowerShell script for the assessment of Group Policy Objects (GPOs) in an Active Directory domain. It produces a consolidated HTML report with findings classified by severity and exports the native (GPMC) report for each GPO.
 
-- **File:** `GPO.ps1`
+- **File:** `GPO_Assessment_Tool.ps1`
 - **Version:** `1.0`
 - **Output language:** Portuguese (pt-BR)
 - **Nature:** Read-only with respect to GPOs, AD, and SYSVOL; it writes only to the output directory.
