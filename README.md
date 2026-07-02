@@ -1,199 +1,112 @@
-================================================================
- GPO ASSESSMENT TOOL
-================================================================
+# GPO Assessment Tool
 
-PowerShell script for assessing Group Policy Objects (GPOs) in an
-Active Directory domain. It produces a consolidated HTML report with
-severity-classified findings and exports the native (GPMC) report of
-each GPO.
+Script PowerShell para avaliação de Objetos de Política de Grupo (GPOs) em um domínio Active Directory. Ele produz um relatório HTML consolidado com achados classificados por severidade e exporta o relatório nativo (GPMC) de cada GPO.
 
-  File            : GPO.ps1
-  Version         : 1.0
-  Output language : Portuguese (pt-BR)
-  Nature          : Read-only with respect to GPOs, AD, and SYSVOL;
-                    writes only to the output directory.
+- **Arquivo:** `GPO.ps1`
+- **Versão:** `1.0`
+- **Idioma de saída:** Português (pt-BR)
+- **Natureza:** Somente leitura em relação a GPOs, AD e SYSVOL; grava apenas no diretório de saída.
 
+## Requisitos
 
-----------------------------------------------------------------
- REQUIREMENTS
-----------------------------------------------------------------
+| Requisito | Obrigatório | Se ausente |
+|---|---|---|
+| Executar como Administrador (`#Requires -RunAsAdministrator`) | Sim | O script não inicia (bloqueado pelo PowerShell). |
+| Máquina ingressada no domínio | Sim | Encerra na detecção do domínio (`exit 1`). |
+| Módulo `GroupPolicy` (RSAT/GPMC) | Sim | Encerra na importação do módulo (`exit 1`). |
+| Módulo `ActiveDirectory` (RSAT) | Não | Links de OU, análise A16 e verificações de OU entre domínios ficam incompletos ou vazios. |
+| Acesso de leitura ao SYSVOL (`\\<domain>\SYSVOL\<domain>\Policies`) | Sim, para A10/A11 | As análises de GPO órfão não são executadas. |
+| Acesso de leitura à delegação de GPO (`Get-GPPermission`) | Sim, para A9 | A análise de SIDs não resolvidos fica incompleta. |
+| Credenciais recomendadas | Domain Admin | Coleta parcial com privilégios menores. |
 
-  Requirement                         | Required | If absent
-  ------------------------------------|----------|-----------------------------
-  Run as Administrator                | Yes      | Script does not start
-  (#Requires -RunAsAdministrator)     |          | (blocked by PowerShell).
-  ------------------------------------|----------|-----------------------------
-  Domain-joined machine               | Yes      | Exits at domain detection
-                                      |          | (exit 1).
-  ------------------------------------|----------|-----------------------------
-  GroupPolicy module (RSAT/GPMC)      | Yes      | Exits at module import
-                                      |          | (exit 1).
-  ------------------------------------|----------|-----------------------------
-  ActiveDirectory module (RSAT)       | No       | OU links, analysis A16, and
-                                      |          | cross-domain OU checks become
-                                      |          | incomplete or empty.
-  ------------------------------------|----------|-----------------------------
-  Read access to SYSVOL               | Yes,     | Orphaned-GPO analyses are not
-  (\\<domain>\SYSVOL\<domain>\        | for      | executed.
-  Policies)                           | A10/A11  |
-  ------------------------------------|----------|-----------------------------
-  Read access to GPO delegation       | Yes,     | Unresolved-SID analysis is
-  (Get-GPPermission)                  | for A9   | incomplete.
-  ------------------------------------|----------|-----------------------------
-  Recommended credentials             | Domain   | Partial collection with lower
-                                      | Admin    | privileges.
+**Fato:** os módulos são carregados via `Import-Module`. O RSAT pode ser instalado com `Add-WindowsCapability -Online -Name 'Rsat.GroupPolicy.Management.Tools~~~~0.0.1.0'` e `Add-WindowsCapability -Online -Name 'Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0'` (Windows 10/11), ou via `Install-WindowsFeature GPMC, RSAT-AD-PowerShell` (Windows Server).
 
-  FACT: Modules are loaded via Import-Module. RSAT can be installed with
-  Add-WindowsCapability -Online -Name 'Rsat.GroupPolicy.Management.Tools~~~~0.0.1.0'
-  and 'Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0' (Windows 10/11), or via
-  Install-WindowsFeature GPMC, RSAT-AD-PowerShell (Windows Server).
+## Execução
 
+```powershell name=README-run.ps1
+# PowerShell elevado, em uma máquina ingressada no domínio
+.\GPO.ps1
+```
 
-----------------------------------------------------------------
- EXECUTION
-----------------------------------------------------------------
+Não há parâmetros de entrada. O domínio de destino é detectado automaticamente por:
 
-  # Elevated PowerShell, on a domain-joined machine
-  .\GPO.ps1
+```powershell name=README-domain-detection.ps1
+[System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()
+```
 
-  There are no input parameters. The target domain is detected
-  automatically via
-  [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain().
+## Saída
 
+Todo o output é gravado em `C:\GPO-Assessment\`:
 
-----------------------------------------------------------------
- OUTPUT
-----------------------------------------------------------------
+| Item | Caminho |
+|---|---|
+| Relatório consolidado | `C:\GPO-Assessment\GPO-Assessment-Report_<yyyyMMdd_HHmmss>.html` |
+| Relatório nativo (GPMC) por GPO | `C:\GPO-Assessment\GPO-Exports\<GPOName>.html` |
 
-  All output is written to C:\GPO-Assessment\ :
+O relatório consolidado é gravado em UTF-8. Os relatórios individuais são gerados por `Get-GPOReport -ReportType Html`.
 
-  Item                          | Path
-  ------------------------------|-------------------------------------------------
-  Consolidated report           | C:\GPO-Assessment\
-                                | GPO-Assessment-Report_<yyyyMMdd_HHmmss>.html
-  ------------------------------|-------------------------------------------------
-  Native (GPMC) report per GPO  | C:\GPO-Assessment\GPO-Exports\<GPOName>.html
+## Análises realizadas
 
-  The consolidated report is written in UTF-8. Individual reports are
-  generated by Get-GPOReport -ReportType Html.
+| Ref. | Análise | Detecção |
+|---|---|---|
+| A1 | Exportação individual | Relatório HTML nativo de cada GPO. |
+| A2 | Mapa de links | Links por GPO (Domínio, OU, Site) com status Enabled/Enforced, via `Get-GPInheritance`. |
+| A3 | GPOs vazias | Sem `ExtensionData` em Computer e User (com base no relatório XML). |
+| A4 | GPOs sem link (com configuração) | Possuem configuração, mas não têm link. |
+| A5 | Somente User (Computer habilitado) | Configurações apenas em User, com o nó Computer ainda habilitado. |
+| A6 | Somente Computer (User habilitado) | Configurações apenas em Computer, com o nó User ainda habilitado. |
+| A7 | Todas as configurações desabilitadas | `GpoStatus = AllSettingsDisabled`. |
+| A8 | Filtros WMI | GPOs com filtro WMI associado. |
+| A9 | SIDs não resolvidos | Entradas de delegação cujo trustee resolve apenas para SID. |
+| A10 | GPC órfão sem GPT | Objeto GPC em `CN=Policies,CN=System` sem pasta correspondente no SYSVOL. |
+| A11 | GPT órfão sem GPC | Pasta GUID no SYSVOL sem objeto GPC correspondente no AD. |
+| A12 | Links entre domínios | Links apontando para um domínio diferente do domínio de origem da GPO. |
+| A13 | Links enforced | Links com Enforced (No Override) ativo. |
+| A15 | Links desabilitados | Links com `Link Enabled = No`. |
+| A16 | Membros de GPCO | Membros de `Group Policy Creator Owners` (recursivo), via módulo `ActiveDirectory`. |
 
+As referências A1-A16 preservam a numeração interna do script (`A14` foi incorporada à `A12`; não há seções `A0` ou `A14` independentes).
 
-----------------------------------------------------------------
- ANALYSES PERFORMED
-----------------------------------------------------------------
+## Comportamento e escopo
 
-  Ref. | Analysis                     | Detection
-  -----|------------------------------|-------------------------------------------
-  A1   | Individual export            | Native HTML report of each GPO.
-  A2   | Link map                     | Links per GPO (Domain, OU, Site) with
-       |                              | Enabled/Enforced status, via
-       |                              | Get-GPInheritance.
-  A3   | Empty GPOs                   | No ExtensionData in Computer and User
-       |                              | (based on the XML report).
-  A4   | Unlinked GPOs (with config)  | Have configuration but no link.
-  A5   | User-only (Computer enabled) | Settings only in User, with the Computer
-       |                              | node still enabled.
-  A6   | Computer-only (User enabled) | Settings only in Computer, with the User
-       |                              | node still enabled.
-  A7   | All Settings Disabled        | GpoStatus = AllSettingsDisabled.
-  A8   | WMI filters                  | GPOs with an associated WMI filter.
-  A9   | Unresolved SIDs              | Delegation entries whose trustee resolves
-       |                              | only to a SID.
-  A10  | Orphaned GPC without GPT     | GPC object in CN=Policies,CN=System with
-       |                              | no corresponding SYSVOL folder.
-  A11  | Orphaned GPT without GPC     | GUID folder in SYSVOL with no
-       |                              | corresponding GPC object in AD.
-  A12  | Cross-domain links           | Links pointing to a domain different from
-       |                              | the GPO's origin domain.
-  A13  | Enforced links               | Links with Enforced (No Override) active.
-  A15  | Disabled links               | Links with Link Enabled = No.
-  A16  | GPCO members                 | Members of Group Policy Creator Owners
-       |                              | (recursive), via the ActiveDirectory
-       |                              | module.
+### Fatos (comportamento do código)
 
-  References A1-A16 preserve the script's internal numbering (A14 was
-  merged into A12; there are no standalone A0 or A14 sections).
+- O script é somente leitura sobre o ambiente: usa apenas cmdlets `Get-*` e exportações; a única gravação ocorre em `C:\GPO-Assessment\`.
+- Ele não executa `Set-GPO`, `Set-GPPermission` ou `Remove-GPO`, e não modifica SYSVOL/AD.
+- O escopo de coleta das GPOs é o domínio atual (`Get-GPO -All -Domain <domain>`).
+- Ele não enumera GPOs de outros domínios na floresta. Os sites são lidos no escopo da floresta.
+- `$ErrorActionPreference = "SilentlyContinue"` é definido globalmente.
+- Falhas em coletas individuais são suprimidas e podem resultar em dados incompletos sem erro visível no console.
 
+### Inferências (classificação e heurísticas, não fatos da plataforma)
 
-----------------------------------------------------------------
- BEHAVIOR AND SCOPE
-----------------------------------------------------------------
+- A classificação de severidade (risco/integridade, higiene/precedência, inventário) é uma convenção editorial deste relatório para priorização.
+- Ela **não** corresponde a nenhuma severidade formal definida pela Microsoft.
+- A detecção de links de OU entre domínios (A12) usa comparação por expressão regular sobre o Distinguished Name.
+- Trata-se de uma heurística e pode produzir falsos positivos/negativos em topologias com nomes de domínio semelhantes.
 
-  FACTS (code behavior):
+## Fora de escopo (complementos recomendados)
 
-  - The script is read-only over the environment: it uses only Get-*
-    cmdlets and exports; the only write occurs in C:\GPO-Assessment\.
-    It does not run Set-GPO, Set-GPPermission, or Remove-GPO, and does
-    not modify SYSVOL/AD.
-  - GPO collection scope is the CURRENT domain
-    (Get-GPO -All -Domain <domain>). It does not enumerate GPOs from
-    other domains in the forest. Sites are read at forest scope.
-  - $ErrorActionPreference = "SilentlyContinue" is set globally.
-    Failures in individual collections are suppressed and may result in
-    incomplete data without a visible console error.
+A versão `1.0` **não** avalia os itens abaixo, que exigem tratamento separado:
 
-  INFERENCES (classification and heuristics, not platform facts):
+- Adequação do security filtering após MS16-072 (presença de `Authenticated Users` / `Domain Computers` com permissão de leitura).  
+  Ref.: Microsoft, *Can't apply user Group Policy settings if computer objects don't have GPO Read permissions*.
+- Presença de credenciais em Group Policy Preferences (`cpassword` em arquivos XML no SYSVOL).  
+  Ref.: Microsoft Security Bulletin `MS14-025`.
+- Comparação de conteúdo com security baselines (Microsoft Security Compliance Toolkit, CIS Benchmarks, DISA STIG).  
+  Ref.: Microsoft Security Compliance Toolkit.
+- Análise em nível de configuração (settings individuais), ADMX Central Store e consistência de versão entre AD/SYSVOL.
 
-  - The severity classification (risk/integrity, hygiene/precedence,
-    inventory) is an editorial convention of this report for
-    prioritization. It does NOT correspond to any formal severity
-    defined by Microsoft.
-  - Cross-domain detection of OU links (A12) uses a regular-expression
-    comparison over the Distinguished Name. It is a heuristic and may
-    produce false positives/negatives in topologies with similar domain
-    names.
+## Aviso legal e suporte
 
+**SEM SUPORTE.** Este script é fornecido **"NO ESTADO EM QUE SE ENCONTRA"**, sem garantia de qualquer tipo, expressa ou implícita, incluindo — sem limitação — garantias de adequação a uma finalidade específica, exatidão ou ausência de erros.
 
-----------------------------------------------------------------
- OUT OF SCOPE (RECOMMENDED COMPLEMENTS)
-----------------------------------------------------------------
+O criador **não fornece** suporte, manutenção, correções ou atualizações de qualquer tipo. Não há canal de contato, SLA ou compromisso de resposta.
 
-  Version 1.0 does NOT assess the items below, which require separate
-  handling:
+A execução é de inteira responsabilidade do usuário. Valide o script em ambiente de laboratório antes de qualquer uso em produção. O criador não se responsabiliza por danos, perda de dados ou impacto operacional decorrente do uso.
 
-  - Adequacy of security filtering after MS16-072 (presence of
-    Authenticated Users / Domain Computers with Read permission).
-    Ref.: Microsoft, "Can't apply user Group Policy settings if computer
-    objects don't have GPO Read permissions" -
-    https://learn.microsoft.com/en-us/troubleshoot/windows-server/group-policy/cannot-apply-user-gpo-when-computer-objects-dont-have-read-permissions
+## Referências
 
-  - Presence of credentials in Group Policy Preferences (cpassword in
-    XML files in SYSVOL).
-    Ref.: Microsoft Security Bulletin MS14-025.
-
-  - Content comparison against security baselines (Microsoft Security
-    Compliance Toolkit, CIS Benchmarks, DISA STIG).
-    Ref.: Microsoft Security Compliance Toolkit -
-    https://learn.microsoft.com/en-us/windows/security/operating-system-security/device-management/windows-security-configuration-framework/security-compliance-toolkit-10
-
-  - Setting-level analysis (individual settings), ADMX Central Store,
-    and AD/SYSVOL version consistency.
-
-
-----------------------------------------------------------------
- DISCLAIMER AND SUPPORT
-----------------------------------------------------------------
-
-  NO SUPPORT. This script is provided "AS IS", without warranty of any
-  kind, express or implied, including - without limitation - warranties
-  of fitness for a particular purpose, accuracy, or freedom from errors.
-
-  The creator provides NO support, maintenance, fixes, or updates of any
-  kind. There is no contact channel, SLA, or response commitment.
-
-  Execution is entirely the user's responsibility. Validate the script
-  in a lab environment before any production use. The creator is not
-  liable for any damage, data loss, or operational impact arising from
-  its use.
-
-
-----------------------------------------------------------------
- REFERENCES
-----------------------------------------------------------------
-
-  - Microsoft Learn - GroupPolicy module (Get-GPO, Get-GPOReport,
-    Get-GPInheritance, Get-GPPermission).
-  - Microsoft Learn - ActiveDirectory module (Get-ADOrganizationalUnit,
-    Get-ADGroup, Get-ADGroupMember).
-  - Microsoft - MS16-072 and Security Compliance Toolkit (URLs in the
-    "Out of Scope" section).
+- Microsoft Learn — módulo `GroupPolicy` (`Get-GPO`, `Get-GPOReport`, `Get-GPInheritance`, `Get-GPPermission`).
+- Microsoft Learn — módulo `ActiveDirectory` (`Get-ADOrganizationalUnit`, `Get-ADGroup`, `Get-ADGroupMember`).
+- Microsoft — MS16-072 e Security Compliance Toolkit (URLs citadas na seção **Fora de escopo**).
